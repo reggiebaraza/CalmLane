@@ -7,11 +7,11 @@ import { LifeBuoy, Menu, Sparkles, X } from "lucide-react";
 import type { PropsWithChildren } from "react";
 import { useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 type AppShellProps = PropsWithChildren<{
   planLabel?: string;
 }>;
-
-import { cn } from "@/lib/utils";
 
 const nav = [
   ["Overview", "/app"],
