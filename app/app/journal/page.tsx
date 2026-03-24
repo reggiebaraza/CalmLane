@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { BookOpen } from "lucide-react";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
+import { journalQuotaExceeded } from "@/lib/billing/usage";
 import { createJournalEntry, listJournalEntries } from "@/lib/db";
+import { UpgradeCheckoutButton } from "@/components/billing/upgrade-checkout-button";
 import { DeleteJournalForm } from "@/components/delete-journal-form";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -28,15 +32,25 @@ const journalSchema = z.object({
 export default async function JournalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; notice?: string }>;
 }) {
   const session = await requireSession();
-  const { q } = await searchParams;
-  const entries = await listJournalEntries(session.userId, 20, q);
+  const { q, notice } = await searchParams;
+  const billing = await getBillingContext(session.userId);
+  const searchTerm = billing.entitlements.searchJournal ? q : undefined;
+  const entries = await listJournalEntries(
+    session.userId,
+    billing.entitlements.maxJournalEntriesListed,
+    searchTerm,
+  );
 
   async function saveEntry(formData: FormData) {
     "use server";
     const active = await requireSession();
+    const billingInner = await getBillingContext(active.userId);
+    if (journalQuotaExceeded(billingInner.entitlements, billingInner.usage.journalEntries)) {
+      redirect("/app/journal?notice=journal_monthly");
+    }
     const parsed = journalSchema.parse({
       content: formData.get("content"),
       title: formData.get("title"),
@@ -57,6 +71,8 @@ export default async function JournalPage({
     revalidatePath("/app");
   }
 
+  const atJournalLimit = journalQuotaExceeded(billing.entitlements, billing.usage.journalEntries);
+
   return (
     <div className="space-y-10">
       <PageHeader
@@ -64,6 +80,24 @@ export default async function JournalPage({
         title="Journal"
         description="A quiet page for your words. CalmLane does not diagnose or replace professional care."
       />
+
+      {notice === "journal_monthly" ? (
+        <Card className="border-amber-200/80 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/25">
+          <p className="text-sm leading-relaxed text-foreground">
+            You have reached this month&apos;s journal entries on the Free plan. Upgrade when you want more room to
+            write — or your allowance resets next month (UTC).
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <UpgradeCheckoutButton>Unlock Premium journaling</UpgradeCheckoutButton>
+            <Link
+              href="/pricing"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-border/90 bg-card px-4 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted/25"
+            >
+              Compare plans
+            </Link>
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="border-border/80">
         <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Gentle prompts</p>
@@ -78,11 +112,20 @@ export default async function JournalPage({
 
       <Card className="border-border/80">
         <form action={saveEntry} className="space-y-4">
+          {atJournalLimit ? (
+            <p className="text-sm text-muted-foreground">
+              Monthly journal limit reached.{" "}
+              <Link href="/pricing" className="font-medium text-accent underline-offset-4 hover:underline">
+                Premium
+              </Link>{" "}
+              includes unlimited entries.
+            </p>
+          ) : null}
           <div>
             <label className="sr-only" htmlFor="journal-title">
               Optional title
             </label>
-            <Input id="journal-title" name="title" placeholder="Optional title" />
+            <Input id="journal-title" name="title" placeholder="Optional title" disabled={atJournalLimit} />
           </div>
           <Textarea
             name="content"
@@ -90,22 +133,25 @@ export default async function JournalPage({
             placeholder="Write freely. You can add mood and tags below before saving."
             required
             className="min-h-[12rem]"
+            disabled={atJournalLimit}
           />
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="sr-only" htmlFor="journal-mood">
                 Mood label (optional)
               </label>
-              <Input id="journal-mood" name="mood" placeholder="Mood label (optional)" />
+              <Input id="journal-mood" name="mood" placeholder="Mood label (optional)" disabled={atJournalLimit} />
             </div>
             <div>
               <label className="sr-only" htmlFor="journal-tags">
                 Tags (comma separated)
               </label>
-              <Input id="journal-tags" name="tags" placeholder="Tags (comma separated)" />
+              <Input id="journal-tags" name="tags" placeholder="Tags (comma separated)" disabled={atJournalLimit} />
             </div>
           </div>
-          <Button type="submit">Save entry</Button>
+          <Button type="submit" disabled={atJournalLimit}>
+            Save entry
+          </Button>
         </form>
       </Card>
 
@@ -119,18 +165,24 @@ export default async function JournalPage({
             <Input
               id="journal-search"
               name="q"
-              defaultValue={q ?? ""}
-              placeholder="Search title or body…"
+              defaultValue={searchTerm ?? ""}
+              placeholder={billing.entitlements.searchJournal ? "Search title or body…" : "Search (Premium)"}
               className="min-w-[12rem] max-w-full sm:max-w-xs"
+              disabled={!billing.entitlements.searchJournal}
             />
-            <Button type="submit" variant="secondary">
+            <Button type="submit" variant="secondary" disabled={!billing.entitlements.searchJournal}>
               Search
             </Button>
           </form>
         </div>
+        {!billing.entitlements.searchJournal ? (
+          <p className="text-xs text-muted-foreground">
+            Full-text search across your journal is a Premium feature — your recent entries still appear below.
+          </p>
+        ) : null}
         <div className="space-y-3">
           {entries.length === 0 ? (
-            q ? (
+            searchTerm ? (
               <EmptyState icon={BookOpen} title="No entries match" className="py-12">
                 Try different words, or clear search to see everything you have saved.
               </EmptyState>

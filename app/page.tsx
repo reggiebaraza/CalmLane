@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Check, Shield } from "lucide-react";
 
+import { PlanComparisonSection } from "@/components/billing/plan-comparison";
 import { AnimatedHero } from "@/components/animated-hero";
 import { LandingStaggerGrid, LandingStaggerItem } from "@/components/landing-stagger";
 import { Card, LinkButton } from "@/components/ui";
@@ -63,6 +64,12 @@ export default function Home() {
       <header className="mb-12 flex flex-wrap items-center justify-between gap-4">
         <p className="font-display text-xl font-medium tracking-tight text-foreground">CalmLane</p>
         <div className="flex items-center gap-3">
+          <Link
+            href="/pricing"
+            className="text-sm text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2"
+          >
+            Pricing
+          </Link>
           <Link
             href="/login"
             className="text-sm text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2"
@@ -134,12 +141,33 @@ export default function Home() {
           </ul>
         </Card>
         <Card className="border-border/80 md:col-span-1">
-          <h3 className="font-display text-lg font-medium text-foreground">Straightforward access</h3>
+          <h3 className="font-display text-lg font-medium text-foreground">Plans that respect your pace</h3>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-            Core experiences are free in this release. If paid options appear later, they will be labeled clearly and
-            will not change crisis resources or safety copy.
+            Free stays genuinely useful. Premium adds depth, search, and the full tool library when you want more room
+            to reflect. Crisis resources and safety-aware responses are never paywalled.
+          </p>
+          <p className="mt-4">
+            <Link
+              href="/pricing"
+              className="text-sm font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2"
+            >
+              Full comparison and billing FAQ →
+            </Link>
           </p>
         </Card>
+      </section>
+
+      <section className="mb-16 space-y-6" aria-labelledby="pricing-plans-heading">
+        <h2
+          id="pricing-plans-heading"
+          className="font-display text-center text-2xl font-medium tracking-tight text-foreground md:text-3xl"
+        >
+          Free foundations, Premium depth
+        </h2>
+        <p className="mx-auto max-w-2xl text-center text-sm leading-relaxed text-muted-foreground md:text-base">
+          No guilt-based upsells. Upgrade when you want more continuity — or stay on Free as long as it serves you.
+        </p>
+        <PlanComparisonSection />
       </section>
 
       <section className="space-y-4" aria-labelledby="faq-heading">

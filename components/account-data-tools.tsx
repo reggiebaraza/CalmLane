@@ -3,13 +3,16 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import Link from "next/link";
+
 import { Button, Card, Input } from "@/components/ui";
 
-export function AccountDataTools({ email }: { email: string }) {
+export function AccountDataTools({ email, allowExport = true }: { email: string; allowExport?: boolean }) {
   const [confirmEmail, setConfirmEmail] = useState("");
   const [busy, setBusy] = useState<"export" | "delete" | null>(null);
 
   async function exportData() {
+    if (!allowExport) return;
     setBusy("export");
     try {
       const res = await fetch("/api/account/export", { credentials: "include" });
@@ -72,10 +75,19 @@ export function AccountDataTools({ email }: { email: string }) {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={busy !== null} onClick={() => void exportData()}>
+        <Button type="button" disabled={busy !== null || !allowExport} onClick={() => void exportData()}>
           {busy === "export" ? "Preparing…" : "Download JSON export"}
         </Button>
       </div>
+      {!allowExport ? (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          JSON export is included with Premium so you can take a full copy of your reflections when you need it.{" "}
+          <Link href="/app/settings#billing" className="font-medium text-accent underline-offset-4 hover:underline">
+            View billing
+          </Link>
+          .
+        </p>
+      ) : null}
       <div className="rounded-xl border border-border/80 p-3">
         <p className="text-sm font-medium text-red-800 dark:text-red-200">Delete account</p>
         <p className="mt-1 text-xs text-muted-foreground">

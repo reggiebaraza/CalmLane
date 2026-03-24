@@ -1,13 +1,18 @@
 import Link from "next/link";
 
+import { UpgradeCheckoutButton } from "@/components/billing/upgrade-checkout-button";
 import { FadeIn } from "@/components/fade-in";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui";
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
 import { computeMoodStreak } from "@/lib/mood-streak";
 import { listJournalEntries, listMoodLogs } from "@/lib/db";
+import { hasStripe } from "@/lib/env";
 
-function buildInsights(logs: Awaited<ReturnType<typeof listMoodLogs>>, journalCount: number) {
+type MoodRow = Awaited<ReturnType<typeof listMoodLogs>>[number];
+
+function buildInsights(logs: MoodRow[], journalCount: number) {
   const streak = computeMoodStreak(logs);
   if (logs.length === 0 && journalCount === 0) {
     return {
@@ -41,13 +46,40 @@ function buildInsights(logs: Awaited<ReturnType<typeof listMoodLogs>>, journalCo
   };
 }
 
+function premiumPatternCopy(logs: MoodRow[]) {
+  if (logs.length < 2) {
+    return {
+      headline: "Keep logging — patterns need a little data",
+      body: "A few more check-ins will let us summarize variability and recurring moods in a gentle, non-clinical way.",
+    };
+  }
+  const nums = logs.map((l) => Number(l.intensity)).filter((n) => !Number.isNaN(n));
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  const spread = Math.max(...nums) - Math.min(...nums);
+  const counts = new Map<string, number>();
+  for (const l of logs) {
+    const m = String(l.mood ?? "").trim() || "Unnamed";
+    counts.set(m, (counts.get(m) ?? 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const [topMood, topN] = sorted[0] ?? ["", 0];
+  return {
+    headline: "Deeper patterns (self-reflection only)",
+    body: `Across recent check-ins, intensity averaged about ${avg.toFixed(1)}/10 with roughly a ${spread.toFixed(1)}-point spread between lowest and highest. "${topMood}" appeared most often (${topN} times). These summaries are for curiosity and self-care — not diagnosis or treatment decisions.`,
+  };
+}
+
 export default async function InsightsPage() {
   const session = await requireSession();
+  const billing = await getBillingContext(session.userId);
+  const moodCap = Math.min(90, billing.entitlements.maxMoodLogsListed);
+  const journalCap = Math.min(200, billing.entitlements.maxJournalEntriesListed);
   const [logs, journalEntries] = await Promise.all([
-    listMoodLogs(session.userId, 30),
-    listJournalEntries(session.userId, 50),
+    listMoodLogs(session.userId, moodCap),
+    listJournalEntries(session.userId, journalCap),
   ]);
   const insight = buildInsights(logs, journalEntries.length);
+  const patterns = premiumPatternCopy(logs);
 
   return (
     <div className="space-y-10">
@@ -77,16 +109,73 @@ export default async function InsightsPage() {
         </Card>
       </FadeIn>
 
-      <FadeIn delay={0.12}>
+      <FadeIn delay={0.1}>
         <Card className="border-border/80">
           <p className="font-display text-base font-medium text-foreground">Journal + mood</p>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            You have {journalEntries.length} recent journal entr{journalEntries.length === 1 ? "y" : "ies"} on file.
-            When mood and writing both show up in the same week, many people find it easier to notice what tends to
-            help.
+            You have {journalEntries.length} recent journal entr{journalEntries.length === 1 ? "y" : "ies"} on file
+            {billing.entitlements.advancedInsights ? " (within your current view)" : ""}. When mood and writing both
+            show up in the same week, many people find it easier to notice what tends to help.
           </p>
         </Card>
       </FadeIn>
+
+      {billing.entitlements.advancedInsights ? (
+        <FadeIn delay={0.12}>
+          <Card className="border-border/80 border-l-4 border-l-accent/40">
+            <p className="font-display text-base font-medium text-foreground">{patterns.headline}</p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{patterns.body}</p>
+          </Card>
+        </FadeIn>
+      ) : (
+        <FadeIn delay={0.12}>
+          <Card className="border-dashed border-border/80 bg-muted/[0.08]">
+            <p className="font-display text-base font-medium text-foreground">Unlock deeper pattern summaries</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Premium adds gentle variability and mood-theme summaries — still non-clinical, still yours. Upgrade when
+              you want more room to reflect.
+            </p>
+            <div className="mt-5">
+              {hasStripe ? (
+                <UpgradeCheckoutButton variant="secondary">Continue with more guided support</UpgradeCheckoutButton>
+              ) : (
+                <p className="text-xs text-muted-foreground">Billing is not configured on this deployment.</p>
+              )}
+            </div>
+          </Card>
+        </FadeIn>
+      )}
+
+      {billing.entitlements.weeklyReflectionSection ? (
+        <FadeIn delay={0.14}>
+          <Card className="border-border/80">
+            <p className="font-display text-base font-medium text-foreground">Weekly reflection</p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              This month so far: {billing.usage.moodLogs} mood check-ins and {billing.usage.journalEntries} journal
+              entries. One question, without pressure: what helped even a little — sleep, a message, a short walk, or
+              saying no to something?
+            </p>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Adjust anytime in journal or mood; this is a mirror, not a grade.
+            </p>
+          </Card>
+        </FadeIn>
+      ) : (
+        <FadeIn delay={0.14}>
+          <Card className="border-dashed border-border/80 bg-muted/[0.08]">
+            <p className="font-display text-base font-medium text-foreground">Weekly reflection prompts</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Premium includes a simple monthly snapshot and a gentle prompt tied to your own activity — no streak
+              shaming, just space to notice.
+            </p>
+            <div className="mt-5">
+              {hasStripe ? (
+                <UpgradeCheckoutButton variant="subtle">Unlock deeper insights and full access</UpgradeCheckoutButton>
+              ) : null}
+            </div>
+          </Card>
+        </FadeIn>
+      )}
     </div>
   );
 }

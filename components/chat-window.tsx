@@ -6,7 +6,16 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { saveChatExcerptToJournalDirect } from "@/app/app/chat/actions";
+import { UpgradeCheckoutButton } from "@/components/billing/upgrade-checkout-button";
 import { CrisisResourcesPanel } from "@/components/safety-alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button, Card, Textarea } from "@/components/ui";
 
 const SUGGESTED_PROMPTS = [
@@ -38,6 +47,7 @@ export function ChatWindow({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const sendMessage = useCallback(
     async (e: React.FormEvent) => {
@@ -71,6 +81,17 @@ export function ChatWindow({
         }
 
         if (!response.ok) {
+          if (response.status === 402) {
+            const j = (await response.json().catch(() => ({}))) as { message?: string };
+            setSendError(
+              j.message ??
+                "You have reached your monthly message allowance on the Free plan. Upgrade when you want more room to reflect.",
+            );
+            setUpgradeOpen(true);
+            setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+            setInput(userMessage.content);
+            return;
+          }
           const errText = response.status === 401 ? "Please sign in again." : "Something went wrong. Try again.";
           setSendError(errText);
           setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
@@ -153,6 +174,24 @@ export function ChatWindow({
   }
 
   return (
+    <>
+    <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Continue with more guided support</DialogTitle>
+          <DialogDescription className="text-left leading-relaxed">
+            Premium includes a higher monthly allowance for reflection chats, deeper history, full coping tools, and
+            richer insights — upgrade only when it feels right for you.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="secondary" onClick={() => setUpgradeOpen(false)}>
+            Not now
+          </Button>
+          <UpgradeCheckoutButton>View Premium</UpgradeCheckoutButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Card className="space-y-5 p-5 sm:p-6">
       <div className="flex gap-3 rounded-2xl border border-border/80 bg-muted/20 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent opacity-90" aria-hidden />
@@ -302,5 +341,6 @@ export function ChatWindow({
         </p>
       </div>
     </Card>
+    </>
   );
 }

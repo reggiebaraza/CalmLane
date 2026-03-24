@@ -6,6 +6,7 @@ import { FadeIn } from "@/components/fade-in";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui";
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
 import { getOverviewData } from "@/lib/db";
 
 function StatCard({
@@ -37,7 +38,14 @@ function StatCard({
 
 export default async function AppOverviewPage() {
   const session = await requireSession();
-  const overview = await getOverviewData(session.userId);
+  const billing = await getBillingContext(session.userId);
+  const maxChats = Number.isFinite(billing.entitlements.maxConversationsListed)
+    ? Math.floor(billing.entitlements.maxConversationsListed)
+    : undefined;
+  const overview = await getOverviewData(session.userId, {
+    maxListedChats: maxChats,
+    moodLogLimit: billing.entitlements.maxMoodLogsListed,
+  });
   const name = overview.preferredName?.trim() || session.name?.trim() || "there";
 
   return (

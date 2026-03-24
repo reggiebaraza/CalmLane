@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 
 import { buildUserExportPayload } from "@/lib/account-export";
 import { getSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
 import { createSupabaseAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 
 export async function GET() {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const billing = await getBillingContext(session.userId);
+  if (!billing.entitlements.allowAccountDataExport) {
+    return NextResponse.json(
+      { error: "Account export is available on Premium. Upgrade in Settings → Billing." },
+      { status: 403 },
+    );
   }
   if (!hasServiceRoleKey()) {
     return NextResponse.json(

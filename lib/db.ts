@@ -12,7 +12,7 @@ export type ChatListItem = {
 
 export async function listChats(
   userId: string,
-  opts?: { search?: string; includeArchived?: boolean; archivedOnly?: boolean },
+  opts?: { search?: string; includeArchived?: boolean; archivedOnly?: boolean; maxItems?: number },
 ) {
   const supabase = await createSupabaseServerClient();
   let query = supabase
@@ -30,7 +30,11 @@ export async function listChats(
   }
   const { data, error } = await query.order("updated_at", { ascending: false });
   if (error) return [];
-  return (data ?? []).map(
+  let rows = data ?? [];
+  if (opts?.maxItems != null && opts.maxItems >= 0) {
+    rows = rows.slice(0, opts.maxItems);
+  }
+  return rows.map(
     (row): ChatListItem => ({
       id: row.id,
       title: row.title,
@@ -175,7 +179,8 @@ export async function listJournalEntries(userId: string, limit = 10, search?: st
     const safe = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
     query = query.or(`title.ilike.%${safe}%,content.ilike.%${safe}%`);
   }
-  const { data } = await query.order("created_at", { ascending: false }).limit(limit);
+  const cap = Math.max(1, Math.min(limit, 500));
+  const { data } = await query.order("created_at", { ascending: false }).limit(cap);
   return data ?? [];
 }
 
@@ -311,11 +316,44 @@ export async function upsertUserPreferences(params: {
   assertNoSupabaseError(error, "Unable to save preferences");
 }
 
-export async function getOverviewData(userId: string) {
+function startOfUtcMonthIso(): string {
+  const n = new Date();
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString();
+}
+
+export async function countJournalEntriesUtcMonth(userId: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const { count, error } = await supabase
+    .from("journal_entries")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", startOfUtcMonthIso());
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function countMoodLogsUtcMonth(userId: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const { count, error } = await supabase
+    .from("mood_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", startOfUtcMonthIso());
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function getOverviewData(
+  userId: string,
+  options?: { maxListedChats?: number; moodLogLimit?: number },
+) {
   const [chats, journals, moods, tools, profile] = await Promise.all([
-    listChats(userId),
+    listChats(
+      userId,
+      options?.maxListedChats != null ? { maxItems: options.maxListedChats } : undefined,
+    ),
     listJournalEntries(userId, 3),
-    listMoodLogs(userId, 60),
+    listMoodLogs(userId, options?.moodLogLimit ?? 60),
     listToolSessions(userId, 5),
     getProfile(userId),
   ]);

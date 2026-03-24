@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { crisisFirstResponse } from "@/lib/chat-crisis";
+import { getBillingContext } from "@/lib/billing/context";
+import { incrementChatUserMessageUsage, chatQuotaExceeded } from "@/lib/billing/usage";
 import { getSession } from "@/lib/auth";
 import {
   createChat,
@@ -23,7 +25,7 @@ const payloadSchema = z.object({
 
 function buildConversationContext(
   messages: Array<{ role: string; content: string }>,
-  maxTurns = 16,
+  maxTurns: number,
 ) {
   return messages
     .slice(-maxTurns)
@@ -86,6 +88,21 @@ export async function POST(request: Request) {
     });
   }
 
+  const billing = await getBillingContext(session.userId);
+  const isCrisis = risk.riskLevel === "high" || risk.riskLevel === "critical";
+
+  if (!isCrisis && chatQuotaExceeded(billing.entitlements, billing.usage.chatUserMessages)) {
+    return NextResponse.json(
+      {
+        error: "limit_reached",
+        code: "chat_monthly_limit",
+        message:
+          "You have reached your monthly message allowance on the Free plan. Upgrade when you want more room to reflect.",
+      },
+      { status: 402 },
+    );
+  }
+
   let conversationId = incomingConversationId ?? null;
   if (conversationId) {
     const conv = await getConversation(session.userId, conversationId);
@@ -99,6 +116,14 @@ export async function POST(request: Request) {
   await insertChatMessages(session.userId, conversationId, [{ role: "user", content }]);
   await maybeRenameFromFirstMessage(session.userId, conversationId, content);
 
+  if (!isCrisis) {
+    try {
+      await incrementChatUserMessageUsage();
+    } catch (e) {
+      console.error("[chat] usage increment", e);
+    }
+  }
+
   const headers = new Headers();
   headers.set("x-calmlane-risk", risk.riskLevel);
   headers.set("x-calmlane-safety-category", risk.category);
@@ -106,7 +131,7 @@ export async function POST(request: Request) {
     headers.set("x-calmlane-conversation-id", conversationId);
   }
 
-  if (risk.riskLevel === "high" || risk.riskLevel === "critical") {
+  if (isCrisis) {
     const text = crisisFirstResponse();
     await insertChatMessages(session.userId, conversationId, [{ role: "assistant", content: text }]);
     headers.set("x-calmlane-runtime", "crisis-static");
@@ -121,9 +146,14 @@ export async function POST(request: Request) {
     return new Response(text, { status: 200, headers });
   }
 
-  const historyRows = await listMessagesForConversation(session.userId, conversationId, 80);
+  const historyRows = await listMessagesForConversation(
+    session.userId,
+    conversationId,
+    billing.entitlements.maxMessagesLoadedPerChat,
+  );
   const context = buildConversationContext(
     historyRows.map((r) => ({ role: r.role, content: r.content })),
+    billing.entitlements.maxContextTurnsForLlm,
   );
 
   const userId = session.userId;

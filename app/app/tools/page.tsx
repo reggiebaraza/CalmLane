@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { Lock } from "lucide-react";
 
 import { FadeIn } from "@/components/fade-in";
 import { PageHeader } from "@/components/page-header";
 import { Button, Card, LinkButton } from "@/components/ui";
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
+import { canUseToolSlug } from "@/lib/plans";
 import { listToolSessions } from "@/lib/db";
 
 import { startToolSession } from "./actions";
@@ -36,6 +39,7 @@ const toolBlurbs: Record<(typeof tools)[number]["slug"], string> = {
 
 export default async function ToolsPage() {
   const session = await requireSession();
+  const billing = await getBillingContext(session.userId);
   const recent = await listToolSessions(session.userId, 12);
 
   return (
@@ -49,22 +53,41 @@ export default async function ToolsPage() {
       </FadeIn>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {tools.map((tool, i) => (
-          <FadeIn key={tool.slug} delay={0.04 + i * 0.02}>
-            <Card className="flex h-full flex-col border-border/80 transition-shadow duration-300 hover:border-accent/15 hover:shadow-md">
-              <h2 className="font-display text-lg font-medium tracking-tight text-foreground">{tool.title}</h2>
-              <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">{toolBlurbs[tool.slug]}</p>
-              <div className="mt-6 flex flex-wrap gap-2">
-                <form action={startToolSession.bind(null, tool.title)}>
-                  <Button type="submit" variant="secondary">
-                    Save to history
-                  </Button>
-                </form>
-                <LinkButton href={tool.href}>Open guided flow</LinkButton>
-              </div>
-            </Card>
-          </FadeIn>
-        ))}
+        {tools.map((tool, i) => {
+          const unlocked = canUseToolSlug(tool.slug, billing.entitlements);
+          return (
+            <FadeIn key={tool.slug} delay={0.04 + i * 0.02}>
+              <Card
+                className={`flex h-full flex-col border-border/80 transition-shadow duration-300 hover:border-accent/15 hover:shadow-md ${!unlocked ? "bg-muted/10" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="font-display text-lg font-medium tracking-tight text-foreground">{tool.title}</h2>
+                  {!unlocked ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/80 bg-card px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Lock className="h-3 w-3" aria-hidden />
+                      Premium
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">{toolBlurbs[tool.slug]}</p>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <form action={startToolSession.bind(null, tool.title, tool.slug)}>
+                    <Button type="submit" variant="secondary" disabled={!unlocked}>
+                      Save to history
+                    </Button>
+                  </form>
+                  {unlocked ? (
+                    <LinkButton href={tool.href}>Open guided flow</LinkButton>
+                  ) : (
+                    <LinkButton href="/pricing?reason=tool" variant="secondary">
+                      Unlock with Premium
+                    </LinkButton>
+                  )}
+                </div>
+              </Card>
+            </FadeIn>
+          );
+        })}
       </div>
 
       {recent.length > 0 ? (

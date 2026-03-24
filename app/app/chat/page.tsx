@@ -10,8 +10,9 @@ import { DeleteConversationForm } from "@/components/delete-conversation-form";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { CrisisResourcesPanel, SafetyAlert } from "@/components/safety-alert";
-import { Button, Card, Input } from "@/components/ui";
+import { Button, Card, Input, LinkButton } from "@/components/ui";
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
 import { getProfile, listChats } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
@@ -21,17 +22,29 @@ export default async function ChatHubPage({
   searchParams: Promise<{ q?: string; view?: string }>;
 }) {
   const session = await requireSession();
+  const billing = await getBillingContext(session.userId);
   const { q, view } = await searchParams;
   const archivedOnly = view === "archived";
+  const searchAllowed = billing.entitlements.searchChat;
+  const qTrim = q?.trim() ?? "";
+  const ignoredSearch = !searchAllowed && Boolean(qTrim);
+  const effectiveQ = searchAllowed ? qTrim : "";
+  const maxListed = Number.isFinite(billing.entitlements.maxConversationsListed)
+    ? Math.floor(billing.entitlements.maxConversationsListed)
+    : undefined;
   const [chats, profile] = await Promise.all([
-    listChats(session.userId, { search: q, archivedOnly, includeArchived: archivedOnly ? undefined : false }),
+    listChats(session.userId, {
+      search: effectiveQ || undefined,
+      archivedOnly,
+      includeArchived: archivedOnly ? undefined : false,
+      maxItems: maxListed,
+    }),
     getProfile(session.userId),
   ]);
   const country = profile?.emergency_country ?? "US";
-  const qTrim = q?.trim() ?? "";
-  const activeTabHref = qTrim ? `/app/chat?q=${encodeURIComponent(qTrim)}` : "/app/chat";
+  const activeTabHref = effectiveQ ? `/app/chat?q=${encodeURIComponent(effectiveQ)}` : "/app/chat";
   const archivedParams = new URLSearchParams();
-  if (qTrim) archivedParams.set("q", qTrim);
+  if (effectiveQ) archivedParams.set("q", effectiveQ);
   archivedParams.set("view", "archived");
   const archivedTabHref = `/app/chat?${archivedParams.toString()}`;
 
@@ -48,6 +61,18 @@ export default async function ChatHubPage({
           </Button>
         </form>
       </PageHeader>
+
+      {ignoredSearch ? (
+        <div className="rounded-2xl border border-accent/20 bg-accent/[0.05] px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+          Title search is part of Premium. You are seeing recent conversations instead.{" "}
+          <Link
+            href="/pricing?reason=search"
+            className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2"
+          >
+            Compare plans
+          </Link>
+        </div>
+      ) : null}
 
       <nav
         className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-muted/15 p-1.5"
@@ -81,31 +106,45 @@ export default async function ChatHubPage({
 
       <SafetyAlert />
 
-      <Card className="border-border/80 p-4 sm:p-5">
-        <form className="flex flex-col gap-3 sm:flex-row sm:items-center" action="/app/chat" method="get">
-          {archivedOnly ? <input type="hidden" name="view" value="archived" /> : null}
-          <label className="sr-only" htmlFor="chat-search">
-            Search conversations
-          </label>
-          <Input
-            id="chat-search"
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="Search by title…"
-            className="sm:max-w-xs"
-          />
-          <Button type="submit" variant="secondary" className="sm:w-auto">
-            Search
-          </Button>
-        </form>
-      </Card>
+      {searchAllowed ? (
+        <Card className="border-border/80 p-4 sm:p-5">
+          <form className="flex flex-col gap-3 sm:flex-row sm:items-center" action="/app/chat" method="get">
+            {archivedOnly ? <input type="hidden" name="view" value="archived" /> : null}
+            <label className="sr-only" htmlFor="chat-search">
+              Search conversations
+            </label>
+            <Input
+              id="chat-search"
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Search by title…"
+              className="sm:max-w-xs"
+            />
+            <Button type="submit" variant="secondary" className="sm:w-auto">
+              Search
+            </Button>
+          </form>
+        </Card>
+      ) : (
+        <Card className="border-dashed border-border/80 bg-muted/[0.06] p-4 sm:p-5">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Searchable chat history helps you find an old thread by title. It is included with Premium when you want more
+            continuity.
+          </p>
+          <div className="mt-4">
+            <LinkButton href="/app/settings#billing" variant="secondary">
+              Upgrade when you are ready
+            </LinkButton>
+          </div>
+        </Card>
+      )}
 
       <section className="space-y-4">
         <h2 className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {archivedOnly ? "Archived conversations" : "Your conversations"}
         </h2>
         {chats.length === 0 ? (
-          qTrim ? (
+          effectiveQ ? (
             <EmptyState icon={MessageSquare} title="No matches" className="py-12">
               Nothing matches that search. Try different words or clear the filter.
             </EmptyState>

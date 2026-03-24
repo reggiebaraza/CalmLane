@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ToolStepList } from "@/components/tool-step-list";
 import { Card } from "@/components/ui";
 import { requireSession } from "@/lib/auth";
+import { getBillingContext } from "@/lib/billing/context";
+import { canUseToolSlug } from "@/lib/plans";
 
 const TOOL_CONTENT: Record<string, { title: string; steps: string[] }> = {
   "two-minute-reset": {
@@ -105,10 +107,14 @@ const TOOL_CONTENT: Record<string, { title: string; steps: string[] }> = {
 };
 
 export default async function ToolFlowPage({ params }: { params: Promise<{ slug: string }> }) {
-  await requireSession();
+  const session = await requireSession();
   const { slug } = await params;
   const tool = TOOL_CONTENT[slug];
   if (!tool) notFound();
+  const billing = await getBillingContext(session.userId);
+  if (!canUseToolSlug(slug, billing.entitlements)) {
+    redirect("/pricing?reason=tool");
+  }
 
   return (
     <div className="mx-auto max-w-xl space-y-5">

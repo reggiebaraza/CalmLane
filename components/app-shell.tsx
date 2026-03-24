@@ -9,6 +9,10 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+type AppShellProps = PropsWithChildren<{
+  planLabel?: string;
+}>;
+
 const nav = [
   ["Overview", "/app"],
   ["Chat", "/app/chat"],
@@ -52,7 +56,7 @@ function NavLinks({
   );
 }
 
-export function AppShell({ children }: PropsWithChildren) {
+export function AppShell({ children, planLabel = "Free" }: AppShellProps) {
   const pathname = usePathname();
   const reduceMotion = useReducedMotion();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -82,6 +86,11 @@ export function AppShell({ children }: PropsWithChildren) {
                 </h2>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                   Supportive AI for reflection — not therapy or crisis care.
+                </p>
+                <p className="mt-3">
+                  <span className="inline-flex items-center rounded-full border border-border/80 bg-muted/20 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {planLabel}
+                  </span>
                 </p>
               </div>
             </div>
@@ -147,6 +156,11 @@ export function AppShell({ children }: PropsWithChildren) {
                   <div>
                     <p className="font-display text-base font-medium text-foreground">CalmLane</p>
                     <p className="text-xs text-muted-foreground">Navigate</p>
+                    <p className="mt-1.5">
+                      <span className="inline-flex rounded-full border border-border/80 bg-muted/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {planLabel}
+                      </span>
+                    </p>
                   </div>
                   <button
                     type="button"
